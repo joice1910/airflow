@@ -1,4 +1,4 @@
-from airflow import DAG
+from airflow import DAG, settings
 from airflow.operators.python_operator import PythonOperator
 from airflow.operators.python_operator import BranchPythonOperator
 from airflow.operators.dummy_operator import DummyOperator
@@ -13,6 +13,7 @@ from dateutil.relativedelta import relativedelta
 from time import gmtime, strftime
 from airflow.models import Variable
 #from airflow.providers.common.sql.sensors.sql import SqlSensor
+from airflow.models.connection import Connection
 from airflow.sensors.sql import SqlSensor
 
 
@@ -30,26 +31,6 @@ with DAG(
         default_args=default_args
 ) as dag:
 
-    
-    def create_or_update_mysql_connection(conn_id, conn_dict):
-        print("Connection Created")
-         session = settings.Session()
-         conn = session.query(Connection).filter(Connection.conn_id == conn_id).first()
-        
-         if conn is None:
-             new_conn = Connection(conn_id=conn_id, **conn_dict)
-             session.add(new_conn)
-             session.commit()
-             print(f"Created new connection with ID: {conn_id}")
-         else:
-             for attr, value in conn_dict.items():
-                 setattr(conn, attr, value)
-             session.commit()
-             print(f"Updated connection with ID: {conn_id}")
-        
-         session.close()
-
-    
     def success_criteria(record):
         print("record success : "+record)
         return record
@@ -60,9 +41,11 @@ with DAG(
         return True if not record else False
 
 
+
+
     profile_sensor = SqlSensor(
         task_id='check_for_data_in_profile',
-        conn_id="82_mysql",
+        conn_id="singlestore",
         success=success_criteria,
         failure=failure_criteria,
         poke_interval=20,
@@ -75,7 +58,7 @@ with DAG(
 
     usage_sensor = SqlSensor(
         task_id='check_for_data_in_customer360_usage',
-        conn_id="82_mysql",
+        conn_id="singlestore",
         success=success_criteria,
         failure=failure_criteria,
         poke_interval=20,
@@ -89,7 +72,7 @@ with DAG(
 
     recharge_sensor = SqlSensor(
         task_id='check_for_data_in_customer360_recharge',
-        conn_id="82_mysql",
+        conn_id="singlestore",
         success=success_criteria,
         failure=failure_criteria,
         poke_interval=20,
@@ -100,6 +83,24 @@ with DAG(
         """,
         dag=dag)
 
+    def create_or_update_mysql_connection(conn_id, conn_dict):
+        session = settings.Session()
+        conn = session.query(Connection).filter(Connection.conn_id == conn_id).first()
+
+        if conn is None:
+            new_conn = Connection(conn_id=conn_id, **conn_dict)
+            session.add(new_conn)
+            session.commit()
+            print(f"Created new connection with ID: {conn_id}")
+        else:
+            for attr, value in conn_dict.items():
+                setattr(conn, attr, value)
+            session.commit()
+            print(f"Updated connection with ID: {conn_id}")
+
+        session.close()
+
+
 
     Start = DummyOperator(
         task_id="Start",
@@ -108,20 +109,21 @@ with DAG(
     )
 
     create_mysql_conn = PythonOperator(
-    task_id='create_mysql_conn',
-    python_callable=create_or_update_mysql_connection,
-    op_kwargs={
-        'conn_id': 'singlestore',
-        'conn_dict': {
-            'conn_type': '82_mysql',
-            'host': 'worker',
-            'schema': 'airflow_rnd',
-            'login': 'hadoopuser',
-            'password': 'Ambariuser.123',
-            'port': 3306,
+        task_id='create_mysql_conn',
+        python_callable=create_or_update_mysql_connection,
+        op_kwargs={
+            'conn_id': '82_mysql',
+            'conn_dict': {
+                'conn_type': 'mysql',
+                'host': 'worker',
+                'schema': 'airflow_rnd',
+                'login': 'hadoopuser',
+                'password': 'Ambariuser.123',
+                'port': 3306,
+            },
         },
-    },
-    dag=dag,)
+        dag=dag,
+    )
 
     fetch_profile = DummyOperator(
         task_id="fetch_profile",
@@ -138,6 +140,7 @@ with DAG(
     fetch_recharge = DummyOperator(
         task_id="fetch_recharge",
         dag=dag,
+        
     )
 
 
@@ -147,7 +150,7 @@ with DAG(
         trigger_rule=TriggerRule.ALL_DONE
     )
 
-    Start >> create_mysql_conn >> [profile_sensor,usage_sensor,recharge_sensor]
+    Start >>  create_mysql_conn >> [profile_sensor,usage_sensor,recharge_sensor]
 
     profile_sensor >> fetch_profile >> End
 
