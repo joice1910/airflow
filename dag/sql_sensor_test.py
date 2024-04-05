@@ -112,7 +112,7 @@ with DAG(
         task_id='create_mysql_conn',
         python_callable=create_or_update_mysql_connection,
         op_kwargs={
-            'conn_id': '82_mysql',
+            'conn_id': 'singlestore',
             'conn_dict': {
                 'conn_type': 'mysql',
                 'host': 'worker',
