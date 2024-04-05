@@ -102,7 +102,6 @@ with DAG(
     fetch_recharge = DummyOperator(
         task_id="fetch_recharge",
         dag=dag,
-        trigger_rule=TriggerRule.ALL_DONE
     )
 
 
