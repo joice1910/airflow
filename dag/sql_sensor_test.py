@@ -30,6 +30,26 @@ with DAG(
         default_args=default_args
 ) as dag:
 
+    
+    def create_or_update_mysql_connection(conn_id, conn_dict):
+        print("Connection Created")
+         session = settings.Session()
+         conn = session.query(Connection).filter(Connection.conn_id == conn_id).first()
+        
+         if conn is None:
+             new_conn = Connection(conn_id=conn_id, **conn_dict)
+             session.add(new_conn)
+             session.commit()
+             print(f"Created new connection with ID: {conn_id}")
+         else:
+             for attr, value in conn_dict.items():
+                 setattr(conn, attr, value)
+             session.commit()
+             print(f"Updated connection with ID: {conn_id}")
+        
+         session.close()
+
+    
     def success_criteria(record):
         print("record success : "+record)
         return record
@@ -87,6 +107,22 @@ with DAG(
         trigger_rule=TriggerRule.ALL_DONE,
     )
 
+    create_mysql_conn = PythonOperator(
+    task_id='create_mysql_conn',
+    python_callable=create_or_update_mysql_connection,
+    op_kwargs={
+        'conn_id': 'singlestore',
+        'conn_dict': {
+            'conn_type': '82_mysql',
+            'host': 'worker',
+            'schema': 'airflow_rnd',
+            'login': 'hadoopuser',
+            'password': 'Ambariuser.123',
+            'port': 3306,
+        },
+    },
+    dag=dag,)
+
     fetch_profile = DummyOperator(
         task_id="fetch_profile",
         dag=dag,
@@ -111,7 +147,7 @@ with DAG(
         trigger_rule=TriggerRule.ALL_DONE
     )
 
-    Start >> [profile_sensor,usage_sensor,recharge_sensor]
+    Start >> create_mysql_conn >> [profile_sensor,usage_sensor,recharge_sensor]
 
     profile_sensor >> fetch_profile >> End
 
